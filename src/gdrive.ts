@@ -1,4 +1,4 @@
-import { Browser, BrowserContext, chromium } from "playwright";
+import { Browser, BrowserContext, chromium, Page } from "playwright";
 
 export type GDriveAvailability = {
   exists: boolean;
@@ -24,40 +24,36 @@ export async function checkGDriveAvailability(
   }
 
   const page = await context.newPage();
-  const url = `https://drive.google.com/file/d/${id}/preview`;
-  let exists = true;
-  let preview = false;
+
+  let exists: boolean | undefined;
+  let preview: boolean | undefined;
 
   try {
-    const response = await page.goto(url, {
-      waitUntil: "domcontentloaded",
-    } );
+    const thumbnailOk = await checkThumbnail(id, page);
 
-    if (!response || response.status() >= 400)
-      exists = false;
-    else {
-      // Check for common error messages in the page content.
-      const content = await page.content();
-
-      if (content.includes("File not found") || content.includes("No se pudo encontrar el archivo"))
-        exists = false;
+    if (thumbnailOk) {
+      exists = true;
+      preview = true;
     }
 
-    if (exists) {
-      // Try to detect the video element to determine if preview is available.
-      try {
-        const driveImg = page.locator("img[src*='drive-viewer']");
+    if (exists === null)
+      exists = await checkVideoPage(id, page);
 
-        await page.waitForLoadState("load");
-        // Espera a que esté visible
-        await driveImg.waitFor( {
-          state: "visible",
-          timeout: 10 * 1000,
-        } );
-        preview = true;
-      } catch {
-        preview = false;
-      }
+    if (exists === true && preview === null) {
+        // Try to detect the video element to determine if preview is available.
+        try {
+
+          const driveImg = page.locator("img[src*='drive-viewer']");
+
+          await page.waitForLoadState("load");
+          // Espera a que esté visible
+          await driveImg.waitFor( {
+            timeout: 500,
+          } );
+          preview = true;
+        } catch {
+          preview = false;
+        }
     }
   } finally {
     page.close();
@@ -66,7 +62,40 @@ export async function checkGDriveAvailability(
   }
 
   return {
-    exists,
-    preview,
+    exists: !!exists,
+    preview: !!preview,
   };
+}
+
+
+async function checkThumbnail(id: string, page: Page) {
+  const thumbnailUrl = `https://lh3.googleusercontent.com/d/${id}=w320`;
+  const thumbnailResponse = await page.goto(thumbnailUrl, {
+    waitUntil: "domcontentloaded",
+  } );
+
+  if (!thumbnailResponse || thumbnailResponse.status() >= 400)
+    return false;
+
+  return true;
+}
+
+async function checkVideoPage(id: string, page: Page) {
+  const url = `https://drive.google.com/file/d/${id}/preview`;
+  const response = await page.goto(url, {
+    waitUntil: "domcontentloaded",
+  } );
+
+  let content = await page.content();
+
+  if (!response || response.status() >= 400)
+    return false;
+  else {
+    // Check for common error messages in the page content.
+
+    if (content.includes("File not found") || content.includes("No se pudo encontrar el archivo"))
+      return false;
+  }
+
+  return true;
 }
