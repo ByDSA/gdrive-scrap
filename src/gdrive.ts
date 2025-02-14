@@ -52,7 +52,7 @@ export async function checkGDriveAvailability(
         // Espera a que esté visible
         await driveImg.waitFor( {
           state: "visible",
-          timeout: 1000,
+          timeout: 10 * 1000,
         } );
         preview = true;
       } catch {
